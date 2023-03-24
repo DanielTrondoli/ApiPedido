@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.petize.ApiPedidos.DTO.AlterarStatusPedidoDTO;
 import com.petize.ApiPedidos.DTO.ItemPedidoDTO;
 import com.petize.ApiPedidos.DTO.PedidoDTO;
+import com.petize.ApiPedidos.broker.SendMessageBroker;
 import com.petize.ApiPedidos.entity.ItemPedido;
 import com.petize.ApiPedidos.entity.Pedido;
 import com.petize.ApiPedidos.entity.StatusPedido;
@@ -16,7 +17,6 @@ import com.petize.ApiPedidos.exception.StatusInvalidoException;
 import com.petize.ApiPedidos.repository.ItemPedidoRepository;
 import com.petize.ApiPedidos.repository.PedidoRepository;
 import org.modelmapper.ModelMapper;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,9 +24,6 @@ import javax.transaction.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-
-import static com.petize.ApiPedidos.rabbitmq.RabbitMQConfig.ALTERAR_STATUS_PEDIDO_ROUTING_KEY;
-import static com.petize.ApiPedidos.rabbitmq.RabbitMQConfig.DIRECT_EXCHANGE_NAME;
 
 @Service
 public class PedidoService {
@@ -40,9 +37,9 @@ public class PedidoService {
     private ItemPedidoRepository itemPedidoRepo;
 
     @Autowired
-    private RabbitTemplate rabbitTemplate;
+    private SendMessageBroker sendMessage;
 
-    private ObjectMapper objectMapper = JsonMapper.builder().findAndAddModules().build();
+    private static final ObjectMapper JSON_MAPPER = JsonMapper.builder().findAndAddModules().build();
 
     private static final ModelMapper MAPPER = new ModelMapper();
 
@@ -50,7 +47,7 @@ public class PedidoService {
     public void createPedido(PedidoDTO pedidoDTO) {
 
         var pedido = MAPPER.map(pedidoDTO, Pedido.class);
-        Pedido pedidoSalvo = pedidoRepo.save(pedido);
+        pedidoRepo.save(pedido);
 
         var itensPedido = createItensPedido(pedido, pedidoDTO.getItens());
         itemPedidoRepo.saveAll(itensPedido);
@@ -131,9 +128,8 @@ public class PedidoService {
         verificaPedidoValidoOrThrowException(id);
         StatusPedido statusPedido = validaStatusPedidoOrThrowException(status);
 
-        var mensagem = objectMapper.writeValueAsString(new AlterarStatusPedidoDTO(id, statusPedido));
-        rabbitTemplate.convertAndSend(DIRECT_EXCHANGE_NAME, ALTERAR_STATUS_PEDIDO_ROUTING_KEY, mensagem);
-
+        var mensagem = JSON_MAPPER.writeValueAsString(new AlterarStatusPedidoDTO(id, statusPedido));
+        sendMessage.updateStatusPedido(mensagem);
     }
 
     private StatusPedido validaStatusPedidoOrThrowException(String status) {
@@ -148,5 +144,14 @@ public class PedidoService {
         if (!pedidoRepo.existsById(id)) {
             throw new PedidoNaoEncontradoException(id);
         }
+    }
+
+    public void updateStatusPedido(AlterarStatusPedidoDTO novoStatus) {
+
+        var pedido = pedidoRepo.findById(novoStatus.getId())
+                .orElseThrow(() -> new PedidoNaoEncontradoException(novoStatus.getId()));
+
+        pedido.setStatus(novoStatus.getStatus());
+        pedidoRepo.save(pedido);
     }
 }
