@@ -2,7 +2,7 @@ version: '3.3'
 services:
   mysqldb:
     image: mysql
-    container_name: 'MySQL_DB'
+    container_name: 'MysqlDb'
     environment:
       MYSQL_DATABASE: 'api_pedido'
       MYSQL_USER: 'api'
@@ -39,6 +39,8 @@ services:
     environment:
       MYSQL_HOST: 'mysqldb'
       RABBIT_HOST: 'rabbitmq'
+      RABBIT_USER: 'guest'
+      RABBIT_PASS: 'guest'
     ports:
       - 8080:8080
     expose:
